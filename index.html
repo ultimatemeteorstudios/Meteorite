@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>METEORITE: AFTERMATH</title>
+    <style>
+        * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; margin: 0; padding: 0; user-select: none; }
+        body { background: #000; font-family: 'Segoe UI', sans-serif; overflow: hidden; touch-action: none; height: 100vh; width: 100vw; color: white; }
+        #gameCanvas { display: block; position: absolute; top: 0; left: 0; }
+        
+        .overlay { 
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%; 
+            display: none; flex-direction: column; justify-content: center; align-items: center; 
+            background: radial-gradient(circle, rgba(0,20,50,0.4) 0%, rgba(0,0,0,0.92) 100%); 
+            z-index: 100; text-align: center; 
+        }
+
+        #menu { display: flex; } 
+        #pause-menu { background: rgba(0,0,0,0.85); backdrop-filter: blur(10px); }
+
+        .title { 
+            font-size: 2.8rem; color: #00fbff; 
+            text-shadow: 0 0 20px #00fbff; 
+            margin-bottom: 2rem; 
+        }
+
+        .btn { 
+            background: rgba(0, 251, 255, 0.05); color: white; border: 1px solid #00fbff; 
+            padding: 15px 30px; margin: 8px; border-radius: 5px; font-weight: bold; 
+            font-size: 1.1rem; cursor: pointer; min-width: 260px;
+        }
+
+        .btn:active { background: #00fbff; color: black; }
+        
+        #ui-overlay { position: absolute; top: 15px; left: 15px; right: 15px; z-index: 50; display: none; }
+        .stat-box { background: rgba(0, 251, 255, 0.1); padding: 8px 15px; border-radius: 5px; margin-bottom: 5px; border-left: 3px solid #00fbff; font-weight: bold; font-size: 0.8rem; display: inline-block; }
+        
+        #pauseBtn { position: absolute; top: 0; right: 0; background: rgba(255,255,255,0.1); border: 1px solid #00fbff; color: #00fbff; padding: 8px 15px; border-radius: 5px; font-weight: bold; }
+        
+        .version-tag { position: absolute; bottom: 10px; right: 15px; font-size: 0.7rem; color: rgba(255,255,255,0.3); z-index: 110; }
+    </style>
+</head>
+<body oncontextmenu="return false;">
+
+<div id="menu" class="overlay">
+    <h1 class="title" id="mainTitle">METEORITE<br>AFTERMATH</h1>
+    <button class="btn" id="startBtn" onclick="openDifficultyMenu()">OYUNU BAŞLAT</button>
+    <button class="btn" style="background: rgba(255,255,255,0.1); border-color: #555;" onclick="toggleLanguage()" id="langBtn">DİL: TÜRKÇE</button>
+    <div class="stat-box" id="highScoreDiv" style="margin-top:20px; border-left:none; color:#00fbff;">EN YÜKSEK SKOR: 0</div>
+</div>
+
+<div id="difficulty-menu" class="overlay">
+    <h2 class="title" style="font-size: 1.8rem;" id="diffTitle">ZORLUK SEÇ</h2>
+    <button class="btn" style="border-color: #2ecc71;" onclick="setDifficulty('easy')" id="lblEasy">KOLAY</button>
+    <button class="btn" style="border-color: #f1c40f;" onclick="setDifficulty('normal')" id="lblNormal">NORMAL</button>
+    <button class="btn" style="border-color: #e67e22;" onclick="setDifficulty('hard')" id="lblHard">ZOR</button>
+    <button class="btn" style="border-color: #e74c3c;" onclick="setDifficulty('extreme')" id="lblExtreme">EKSTREM</button>
+    <button class="btn" style="border-color: #8e44ad;" onclick="setDifficulty('impossible')" id="lblImpossible">İMKANSIZ</button>
+    <button class="btn" onclick="closeDifficultyMenu()" style="background: #222;" id="lblBack">GERİ</button>
+</div>
+
+<div id="pause-menu" class="overlay">
+    <h1 class="title" id="pauseTitle">DURAKLATILDI</h1>
+    <button class="btn" onclick="resumeGame()" id="lblResume">DEVAM ET</button>
+    <button class="btn" style="border-color: #e74c3c;" onclick="backToMenu()" id="lblExit">ANA MENÜYE DÖN</button>
+</div>
+
+<div id="ui-overlay">
+    <div style="float: left;">
+        <div class="stat-box" id="scoreDiv">SKOR: 0</div><br>
+        <div id="livesDiv" style="margin-top: 5px;"></div>
+    </div>
+    <button id="pauseBtn" onclick="pauseGame()">DURDUR</button>
+</div>
+
+<div class="version-tag">v1.3.0-Alpha. Ultimate Meteor 2 tabanlı.</div>
+<canvas id="gameCanvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    let gameRunning = false, isPaused = false, score = 0, lives = 3, lang = 'tr';
+    let highScore = localStorage.getItem('aftermath_highscore') || 0;
+    let meteors = [], bullets = [], stars = [], spawnTimer = 0, bulletCooldown = 0;
+
+    const translations = {
+        tr: { start: "OYUNU BAŞLAT", lang: "DİL: TÜRKÇE", score: "SKOR", best: "EN YÜKSEK SKOR", diff: "ZORLUK SEÇ", easy: "KOLAY", normal: "NORMAL", hard: "ZOR", extreme: "EKSTREM", impossible: "İMKANSIZ", back: "GERİ", pause: "DURAKLATILDI", resume: "DEVAM ET", exit: "ANA MENÜYE DÖN", stop: "DURDUR" },
+        en: { start: "START GAME", lang: "LANG: ENGLISH", score: "SCORE", best: "BEST SCORE", diff: "SELECT DIFFICULTY", easy: "EASY", normal: "NORMAL", hard: "HARD", extreme: "EXTREME", impossible: "IMPOSSIBLE", back: "BACK", pause: "PAUSED", resume: "RESUME", exit: "MAIN MENU", stop: "PAUSE" }
+    };
+
+    const difficultySettings = {
+        easy: { speed: 1.8, rate: 70, mult: 1, min: 25, max: 35 },
+        normal: { speed: 3.5, rate: 55, mult: 2, min: 20, max: 30 },
+        hard: { speed: 5.2, rate: 40, mult: 4, min: 15, max: 25 },
+        extreme: { speed: 7.0, rate: 30, mult: 8, min: 12, max: 20 },
+        impossible: { speed: 9.5, rate: 20, mult: 15, min: 8, max: 15 }
+    };
+    let currentMode = 'normal';
+    const ship = { x: 0, y: 0, targetX: 0, targetY: 0, smooth: 0.18, menuY: 0 };
+
+    function initCanvas() {
+        canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+        resetShipPosition();
+        stars = []; for(let i=0; i<80; i++) stars.push({ x: Math.random()*canvas.width, y: Math.random()*canvas.height, s: Math.random()*2 });
+        updateUI();
+    }
+
+    function resetShipPosition() {
+        ship.x = canvas.width / 2; 
+        ship.y = canvas.height - 150;
+        ship.targetX = ship.x; 
+        ship.targetY = ship.y;
+    }
+
+    function toggleLanguage() {
+        lang = lang === 'tr' ? 'en' : 'tr';
+        document.getElementById('startBtn').innerText = translations[lang].start;
+        document.getElementById('langBtn').innerText = translations[lang].lang;
+        document.getElementById('diffTitle').innerText = translations[lang].diff;
+        document.getElementById('lblEasy').innerText = translations[lang].easy;
+        document.getElementById('lblNormal').innerText = translations[lang].normal;
+        document.getElementById('lblHard').innerText = translations[lang].hard;
+        document.getElementById('lblExtreme').innerText = translations[lang].extreme;
+        document.getElementById('lblImpossible').innerText = translations[lang].impossible;
+        document.getElementById('lblBack').innerText = translations[lang].back;
+        document.getElementById('pauseTitle').innerText = translations[lang].pause;
+        document.getElementById('lblResume').innerText = translations[lang].resume;
+        document.getElementById('lblExit').innerText = translations[lang].exit;
+        document.getElementById('pauseBtn').innerText = translations[lang].stop;
+        updateUI();
+    }
+
+    function openDifficultyMenu() { document.getElementById('menu').style.display = 'none'; document.getElementById('difficulty-menu').style.display = 'flex'; }
+    function closeDifficultyMenu() { document.getElementById('difficulty-menu').style.display = 'none'; document.getElementById('menu').style.display = 'flex'; }
+    function setDifficulty(mode) { currentMode = mode; document.getElementById('difficulty-menu').style.display = 'none'; startGame(); }
+
+    function pauseGame() { if(gameRunning) { isPaused = true; document.getElementById('pause-menu').style.display = 'flex'; } }
+    function resumeGame() { isPaused = false; document.getElementById('pause-menu').style.display = 'none'; }
+    function backToMenu() {
+        gameRunning = false; isPaused = false;
+        resetShipPosition();
+        document.getElementById('pause-menu').style.display = 'none';
+        document.getElementById('ui-overlay').style.display = 'none';
+        document.getElementById('menu').style.display = 'flex';
+    }
+
+    window.ontouchmove = (e) => { if(gameRunning && !isPaused) { ship.targetX = e.touches[0].clientX; ship.targetY = e.touches[0].clientY; } };
+
+    function update() {
+        stars.forEach(s => { s.y += s.s * 0.5; if(s.y > canvas.height) s.y = -5; });
+        
+        // Gemi hareketi her zaman güncellenir (smooth geçiş için)
+        ship.x += (ship.targetX - ship.x) * ship.smooth; 
+        ship.y += (ship.targetY - ship.y) * ship.smooth;
+
+        if(!gameRunning) {
+            ship.menuY = Math.sin(Date.now() / 600) * 15;
+            return;
+        }
+        if(isPaused) return;
+        
+        spawnTimer++;
+        if(spawnTimer >= difficultySettings[currentMode].rate) {
+            const conf = difficultySettings[currentMode];
+            const sz = Math.random() * (conf.max - conf.min) + conf.min;
+            meteors.push({ x: Math.random() * (canvas.width - 60) + 30, y: -100, size: sz, speed: conf.speed + Math.random() * 1.5 });
+            spawnTimer = 0;
+        }
+
+        bullets.forEach((b, i) => { b.y -= 22; if(b.y < -50) bullets.splice(i, 1); });
+
+        for(let i = meteors.length - 1; i >= 0; i--) {
+            let m = meteors[i]; m.y += m.speed;
+            if(Math.hypot(m.x - ship.x, m.y - ship.y) < m.size + 15) { lives--; meteors.splice(i, 1); updateUI(); if(lives <= 0) gameOver(); continue; }
+            for(let j = bullets.length - 1; j >= 0; j--) {
+                if(Math.hypot(m.x - bullets[j].x, m.y - bullets[j].y) < m.size + 5) {
+                    meteors.splice(i, 1); bullets.splice(j, 1);
+                    score += 10 * difficultySettings[currentMode].mult; updateUI(); break;
+                }
+            }
+            if(m && m.y > canvas.height + 100) meteors.splice(i, 1);
+        }
+    }
+
+    function draw() {
+        ctx.fillStyle = '#000'; ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = '#fff'; stars.forEach(s => ctx.fillRect(s.x, s.y, s.s, s.s));
+        
+        // Menüdeyken gemiyi hafifçe sallandırarak çiziyoruz
+        if(!gameRunning) {
+            drawShip(ship.x, ship.y + ship.menuY);
+        } else {
+            drawShip(ship.x, ship.y);
+            ctx.fillStyle = '#00fbff'; bullets.forEach(b => ctx.fillRect(b.x-2, b.y, 4, 20));
+            meteors.forEach(m => { 
+                ctx.fillStyle = '#1a1a1a'; ctx.strokeStyle = '#00fbff'; ctx.lineWidth = 2; 
+                ctx.beginPath(); ctx.arc(m.x, m.y, m.size, 0, Math.PI*2); ctx.fill(); ctx.stroke(); 
+            });
+        }
+    }
+
+    function drawShip(x, y) {
+        ctx.save(); ctx.translate(x, y);
+        ctx.shadowBlur = 15; ctx.shadowColor = '#00fbff';
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.moveTo(0, -35); ctx.lineTo(-25, 20); ctx.lineTo(-10, 10); ctx.lineTo(10, 10); ctx.lineTo(25, 20); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#00fbff'; ctx.beginPath(); ctx.arc(0, -5, 6, 0, Math.PI * 2); ctx.fill();
+        ctx.shadowBlur = 10; ctx.shadowColor = '#ffaa00'; ctx.fillStyle = '#ffcc00'; ctx.fillRect(-5, 15, 10, 10 + Math.random()*10);
+        ctx.restore();
+    }
+
+    function updateUI() {
+        document.getElementById('scoreDiv').innerText = `${translations[lang].score}: ${score}`;
+        document.getElementById('livesDiv').innerHTML = `<span style="color:#e74c3c; font-size:1.4rem;">${"❤".repeat(Math.max(0, lives))}</span>`;
+        document.getElementById('highScoreDiv').innerText = `${translations[lang].best}: ${highScore}`;
+    }
+
+    function startGame() {
+        score = 0; lives = 3; meteors = []; bullets = []; gameRunning = true; isPaused = false; spawnTimer = 0;
+        resetShipPosition();
+        document.getElementById('ui-overlay').style.display = 'block';
+        updateUI();
+    }
+
+    function gameOver() {
+        gameRunning = false;
+        if(score > highScore) { highScore = score; localStorage.setItem('aftermath_highscore', highScore); }
+        resetShipPosition();
+        document.getElementById('menu').style.display = 'flex';
+        document.getElementById('ui-overlay').style.display = 'none';
+        document.getElementById('mainTitle').innerHTML = `METEORITE<br>AFTERMATH<br><small>${translations[lang].score}: ${score}</small>`;
+        updateUI();
+    }
+
+    function loop() { 
+        update(); draw(); 
+        if(gameRunning && !isPaused) {
+            bulletCooldown++; if(bulletCooldown >= 18) { bullets.push({ x: ship.x, y: ship.y - 35 }); bulletCooldown = 0; }
+        }
+        requestAnimationFrame(loop); 
+    }
+
+    window.addEventListener('resize', initCanvas); initCanvas(); loop();
+</script>
+</body>
+</html>
